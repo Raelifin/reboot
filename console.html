@@ -4,14 +4,27 @@
     <meta content="text/html;charset=utf-8" http-equiv="Content-Type">
     <meta content="utf-8" http-equiv="encoding">
     <style>
-      body {
+      .cursor {
+        margin-right: -2px;
+        border-width: 0px;
+        border-right-width: 2px;
+        border-style: solid;
+      }
+
+      .dark {
         background: #000;
         color: #FFF;
       }
-      .cursor {
-        border-right: thin solid lime;
-        margin-right: -1px;
-        /* padding-left: 1px; */
+      .dark .cursor {
+        border-color: #0F0;
+      }
+
+      .light {
+        background: #FFF;
+        color: #000;
+      }
+      .light .cursor {
+        border-color: #0A0;
       }
     </style>
     <script type="text/javascript">
@@ -107,6 +120,7 @@
 
       document.onkeydown = function(e) {
           e = e || window.event;
+          if (e.ctrlKey && e.keyCode != 82 && e.keyCode != 86) { e.preventDefault(); }
           var element = document.getElementById("console");
           var inp = element.innerHTML.replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&').split(cursorText);
           var out = [];
@@ -219,7 +233,6 @@
                 x = x.slice(0, -diff);
               }
             } else if ( e.ctrlKey && e.keyCode == 38 ) {  // ctrl+Up
-              e.preventDefault();
               var startOfThisLine = x.lastIndexOf('\n') + 1;
               var pre_x = x.slice(0, startOfThisLine - 1);
               var prevLine = pre_x.lastIndexOf('\n') + 1;
@@ -240,7 +253,6 @@
               x = x + y.slice(0, shift);
               y = y.slice(shift);
             } else if ( e.ctrlKey && e.keyCode == 40 ) {  // ctrl+Down
-              e.preventDefault();
               var startOfThisLine = x.lastIndexOf('\n') + 1;
               var pre_x = x.slice(0, startOfThisLine);
               var toEndOfLine = y.indexOf('\n');
@@ -250,12 +262,16 @@
               nextLine = (nextLine == -1) ? post_y.length : nextLine;
               x = pre_x + post_y.slice(0, nextLine) + "\n" + x.slice(startOfThisLine);
               y = y.slice(0, toEndOfLine) + post_y.slice(nextLine);
-            } else if ( e.keyCode == 16 || e.keyCode == 17 ) { // shift and ctrl
+            } else if ( e.keyCode == 16 || e.keyCode == 17 || e.keyCode == 18 ) { // shift and ctrl and alt
+              // No-op
+            } else if ( e.ctrlKey && e.keyCode == 8 ) { // ctrl-backspace
+              // No-op
+            } else if ( e.ctrlKey && e.keyCode == 77 ) { // ctrl-m
               // No-op
             } else if ( e.ctrlKey && e.keyCode == 82 ) { // ctrl-r
               // No-op
             } else if ( e.ctrlKey && e.keyCode == 83 ) { // ctrl-s
-              e.preventDefault();
+              // No-op
             } else if ( e.ctrlKey && e.keyCode == 86 ) { // ctrl-v
               // No-op
             } else if ( e.ctrlKey && e.keyCode == 13 ) { // ctrl-enter
@@ -267,10 +283,23 @@
             x = y;
           }
           out.push(x);
+
+          if ( e.ctrlKey && e.keyCode == 8 ) { // ctrl-backspace
+            if (out.length > 2) {
+              var temp = out.pop();
+              out[out.length-1] = out.length[-1] + temp;
+            }
+          }
+
           element.innerHTML = out.join(cursorText);
           localStorage.setItem("key", element.innerHTML);
 
-          if ( e.ctrlKey && e.shiftKey && e.keyCode == 83 ) { // ctrl-shift-s
+          if ( e.ctrlKey && e.keyCode == 77 ) { // ctrl-m
+            // change modes
+            document.body.classList.toggle('dark');
+            document.body.classList.toggle('light');
+            localStorage.setItem("bodyClass", document.body.className);
+          } else if ( e.ctrlKey && e.shiftKey && e.keyCode == 83 ) { // ctrl-shift-s
             saveToDisk("source.txt", "text/experiment", element.innerHTML);
           }
 
@@ -308,9 +337,15 @@
           });
         }
       }
+
+      function init() {
+        document.getElementById('console').focus();
+        document.getElementById('console').innerHTML = localStorage.getItem('key') || cursorText;
+        document.body.classList.add(localStorage.getItem('bodyClass') || 'dark');
+      }
     </script>
   </head>
-  <body onload="document.getElementById('console').innerHTML = localStorage.getItem('key') || cursorText">
+  <body class="dark" onload="init()">
     <pre id="console"></pre>
   </body>
 </html>
