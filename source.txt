@@ -1,0 +1,262 @@
+; Semicolons mark comments
+00 61 73 6D; WASM BINARY MAGIC
+01 00 00 00; WASM BINARY VERSION
+
+; ===================================
+1; Function Type Signatures
+17; Section size in Bytes
+5; Count
+
+60 0 0           ;  () -&gt; ()
+60 0 1 7F        ;  () -&gt; i32
+60 1 7F 0        ; i32 -&gt; ()
+60 1 7F 1 7F     ; i32 -&gt; i32
+60 2 7F 7F 1 7F  ; (i32, i32) -&gt; i32
+
+; ==================================
+2; Imports
+17; Section size in Bytes
+2; Count
+
+3 69 6E 70; "inp"
+3 6D 65 6D; "mem"
+2 0 A; memory of at least 10 pages
+
+3 69 6E 70; "inp"
+3 6C 65 6E; "len"
+3 7F 0; const $remainingChars : i32
+
+; ==================================
+3; Function Headers
+6; Section size in Bytes
+5; Count
+
+0; main : () -&gt; ()
+1; popChar : () -&gt; i32
+1; popNonWhitespace : () -&gt; i32
+3; swallowByte : i32 -&gt; i32
+3; parseNybble : i32 -&gt; i32
+
+; ==================================
+6; Globals
+10; Section size in Bytes
+3; Count
+
+7F 01 41 0 B; var $readIdx = i32.const 0
+7F 01 41 0 B; var $consumedChars = i32.const 0
+7F 01 41 0 B; var $writtenBytes = i32.const 0
+
+; ==================================
+7; Exports
+1B; Section size in Bytes
+3; Count
+
+3 6F 75 74; "out"
+2 0; mem
+
+B 70 61 72 73 65 4E 79 62 62 6C 65; "parseNybble"
+0 4; fn #4
+
+3 6C 65 6E; "len"
+3 3; global $writtenBytes
+
+; ==================================
+8; Start
+1; Section size in Bytes
+0; main
+
+; ==================================
+<span class="cursor"></span>A; Function Bodies
+DF 2; Section size in Bytes
+5; Count
+
+; main : () -&gt; ()    (side-effects on memory)
+3F; Function size in Bytes
+
+1; one type of local var
+  1 7F;   $b : i32
+
+1 1 1 1 1
+1 1 1 1 1
+1 1 1 1 1
+1 1 1 1 1
+1 1 1
+
+03 40; loop
+
+10 2; popNonWhitespace
+10 3; swallowByte
+22 0; tee $b
+
+41 0; i32.const 0
+4E 4 40; if i32.ge_s
+
+; write byte
+23 3; push_global $writtenBytes
+20 0; push_local $b
+3A 0 0; i32.store8 0 0
+
+; increment $writtenBytes
+23 3; push_global $writtenBytes
+41 1; i32.const 1
+6A; i32.add
+24 3; set_global $writtenBytes
+
+B; endif
+
+; until $consumedChars + 1 &gt; inp.len
+23 0; push_global inp.len
+23 2; push_global $consumedChars
+4F; i32.lt_u
+D 0; br_if
+B; endloop
+B; end (main)
+
+; --------------------------
+; popChar : () -&gt; i32   (side-effects on memory)
+2F; Function size in Bytes
+
+1; one type of local var...
+1 7F; $result : i32
+
+23 1; push_global $readIdx
+2D 0 0; load8_u at $readIdx
+22 0; tee $result
+
+41 80 1; i32.const 128
+4F 4 40; if i32.ge_u
+0; crash           TODO
+1 1 1 1
+1 1 1 1
+1 1 1 1
+B; endif
+
+; increment $readIdx
+23 1; push_global $readIdx
+41 1; i32.const 1
+6A; i32.add
+24 1; set_global $readIdx
+
+; increment $consumedChars
+23 2; push_global $consumedChars
+41 1; i32.const 1
+6A; i32.add
+24 2; set_global $consumedChars
+
+20 0; push_local $result
+B; end (popChar)
+
+; ------------------------
+; popNonWhitespace : () -&gt; i32    (side-effects on memory)
+3D; Function size in Bytes
+
+1; one type of local var...
+2 7F; $commentMode : Bit   &amp;   $c : Char
+
+3 40; loop
+10 1 22 1; $c &lt;- popChar() then push $c
+
+41 A; char.const '\n'
+46 4 40; if i32.eq
+41 0 21 0; $commentMode &lt;- lo;
+C 1; continue
+B; endif (not a newline)
+
+41 0; char.const char.null
+20 1; push $c
+46 4 40; if i32.eq
+20 1 F; return $c
+B; endif (not a nullchar)
+
+20 0 D 0; continue_if $commentMode
+
+20 1; push_local $c
+41 3B; char.const ';'
+46 4 40; if char.eq
+41 1 21 0; $commentMode &lt;- hi
+C 1; continue
+B; endif (not a semicolon)
+
+20 1; push_local $c
+41 20; char.const ' '
+46 D 0; continue_if char.eq
+
+B; endloop
+20 1; push_local $c
+B; end (consumeWhitespace)
+
+; -----------------------
+; swallowByte : i32 -&gt; i32   (side-effects on memory)
+3F; Function size in Bytes
+
+1; one type of local var...
+2 7F; $n : Nibble
+
+1 1 1 1 1 1 1
+
+20 0 10 4; parseNybble($x)
+22 0; tee $x
+
+41 0; i32.const 0
+48 4 40; if i32.lt_s
+20 0 F; return $x
+B; endif
+
+10 1 10 4; parseNybble(popChar())
+22 1; tee $n
+
+41 0; i32 const0
+48 4 40; if i32.lt_s
+; if the second nybble fails to parse, we return just the first one
+; this is so pairs like "0 " and "A;" work.
+; but first we must "unpop" the char that we tried to nibble
+;   WARNING! THERE'S A BUG HERE!
+;   IF THE POPPED CHAR IS MULTIBYTE, WE'LL FAIL TO UNPOP CLEANLY!!
+; TODO FIXME
+; 1 1 1 1 1 1 1
+23 1 41 1 6B 24 1; decrement $readIdx
+; 1 1 1 1 1 1 1
+23 2 41 1 6B 24 2; decrement $consumedChars
+20 0 F; return $x
+B; endif
+
+20 0; push_local $x
+41 10; i32.const 16
+6C; i32.mul
+20 1; push_local $c
+6A; i32.add
+B; end (parseByte)
+
+; ----------------------
+; parseNybble : i32 -&gt; i32  (pure)
+6F; Function size in Bytes
+
+0; no local vars
+1 1; nop
+
+20 0 41 30 49 4 40; if $x &lt; '0'
+41 0 41 1 6B F; return 0 - 1
+B; endif
+
+20 0 41 3A 49 4 40; if $x &lt; ':'
+20 0 41 30 6B F; return $x - '0'
+B
+
+20 0 41 C1 80 0 49 4 40; if $x &lt; 'A'
+41 0 41 1 6B F; return 0 - 1
+B
+
+20 0 41 C7 80 0 49 4 40; if $x &lt; 'G'
+20 0 41 C1 80 0 6B 41 A 6A F; return 10 + $x - 'A'
+B
+
+20 0 41 E1 80 0 49 4 40; if $x &lt; 'a'
+41 0 41 1 6B F; return 0 - 1
+B
+
+20 0 41 E7 80 0 49 4 40; if $x &lt; 'g'
+20 0 41 E1 80 0 6B 41 A 6A F; return 10 + $x - 'a'
+B
+
+41 0 41 1 6B
+B; end (parseNybble)

@@ -1,0 +1,294 @@
+<html>
+  <head>
+    <title>Experiment</title>
+    <style>
+      body {
+        background: #000;
+        color: #FFF;
+      }
+      .cursor {
+        border-right: thin solid lime;
+        margin-right: -1px;
+        /* padding-left: 1px; */
+      }
+    </style>
+    <script type="text/javascript">
+      var core = (function() {
+        var rawCode = localStorage.getItem("app");
+        if (rawCode === null) { return null; }
+        var bytes = rawCode.split(',');
+        let view = new Uint8Array(new ArrayBuffer(bytes.length));
+        for (var i=0; i < bytes.length; i++) { view[i] = parseInt(bytes[i]); }
+        return WebAssembly.compile(view);
+      })();
+      function compile(callback, raw) {
+        if (core === null) {
+          var words = raw.split(/[\n ]+|;[^\n]*/).filter(Boolean);
+          if (words.length == 0) return {};
+          let view = new Uint8Array(new ArrayBuffer(words.length));
+          for (var i=0; i < words.length; i++) {
+            view[i] = parseInt("0x"+words[i]);
+          }
+          callback({bytecode: view});
+        } else {
+          core.then(mod => {
+            var mem = new WebAssembly.Memory({initial:10});
+            let view = new Uint8Array(mem.buffer);
+            var bytes = raw.toUTF8Bytes();
+            for (var i = 0; i < bytes.length; i++) { view[i] = bytes[i]; }
+            const len = new WebAssembly.Global({value:'i32', mutable: false}, raw.length);
+            WebAssembly.instantiate(mod, {inp: {mem: mem, len: len}}).then(inst => {
+              var view2 = new Uint8Array(inst.exports.out.buffer);
+              const compiled = view2.slice(0, inst.exports.len);
+              callback({bytecode: compiled});
+            });
+          });
+        }
+      }
+
+      String.prototype.toUTF8Bytes = String.prototype.toUTF8Bytes || (function () {
+        var utf8 = [];
+        for (var i=0; i < this.length; i++) {
+            var charcode = this.charCodeAt(i);
+            if (charcode < 0x80) utf8.push(charcode);
+            else if (charcode < 0x800) {
+                utf8.push(0xc0 | (charcode >> 6),
+                          0x80 | (charcode & 0x3f));
+            }
+            else if (charcode < 0xd800 || charcode >= 0xe000) {
+                utf8.push(0xe0 | (charcode >> 12),
+                          0x80 | ((charcode>>6) & 0x3f),
+                          0x80 | (charcode & 0x3f));
+            }
+            else {
+                // let's keep things simple and only handle chars up to U+FFFF...
+                utf8.push(0xef, 0xbf, 0xbd); // U+FFFE "replacement character"
+            }
+        }
+        return utf8;});
+
+      function saveToDisk(filename, type, data) {
+        var blob = new Blob([data], {type: type});
+        if (window.navigator.msSaveOrOpenBlob) {
+          window.navigator.msSaveBlob(blob, filename);
+        } else {
+          var elem = window.document.createElement('a');
+          elem.href = window.URL.createObjectURL(blob);
+          elem.download = filename;
+          document.body.appendChild(elem);
+          elem.click();
+          document.body.removeChild(elem);
+        }
+      }
+
+      const cursorText = '<span class="cursor"></span>';  // WARNING: Also shows up in the body.
+
+      var debug = {};
+
+      document.onkeydown = function(e) {
+          e = e || window.event;
+          var element = document.getElementById("console");
+          var inp = element.innerHTML.replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&').split(cursorText);
+          var out = [];
+          var x = inp[0];
+          for (var i = 1; i < inp.length; i++) {
+            var y = inp[i];
+            if (e.ctrlKey && e.keyCode == 90) {
+              alert("Ctrl-Z");
+            } else if ( ! e.ctrlKey && e.keyCode >= 48 && e.keyCode <= 57 ) {  // Number keys
+              if (e.shiftKey) {
+                var codes = [')','!','@','#','$','%','^','&','*','('];
+                x = x + codes[e.keyCode - 48];
+              } else {
+                x = x + String.fromCharCode(e.keyCode);
+              }
+            } else if ( ! e.ctrlKey && e.keyCode >= 65 && e.keyCode <= 90 ) {
+              x = x + String.fromCharCode(e.keyCode + (e.shiftKey ? 0 : 32));
+            } else if ( ! e.ctrlKey && e.keyCode == 13 ) {
+              x = x + '\n';
+            } else if ( ! e.ctrlKey && e.keyCode == 32 ) {
+              e.preventDefault();
+              x = x + ' ';
+            } else if ( ! e.ctrlKey && e.keyCode == 9 ) {
+              x = x + '  ';
+              e.preventDefault();
+            } else if ( ! e.ctrlKey && e.keyCode == 186 ) {  // colon/semicolon
+              if (e.shiftKey) {
+                x = x + ':';
+              } else {
+                x = x + ';';
+              }
+            } else if ( ! e.ctrlKey && e.keyCode == 219 ) {  // l-brace/l-clamp
+              if (e.shiftKey) {
+                x = x + '{';
+              } else {
+                x = x + '[';
+              }
+            } else if ( ! e.ctrlKey && e.keyCode == 220 ) {  // pipe/backslash
+              if (e.shiftKey) {
+                x = x + '|';
+              } else {
+                x = x + '\\';
+              }
+            } else if ( ! e.ctrlKey && e.keyCode == 221 ) {  // r-brace/r-clamp
+              if (e.shiftKey) {
+                x = x + '}';
+              } else {
+                x = x + ']';
+              }
+            } else if ( ! e.ctrlKey && e.keyCode == 222 ) {  // prime/doubleprime
+              if (e.shiftKey) {
+                x = x + '"';
+              } else {
+                x = x + '\'';
+              }
+            } else if ( ! e.ctrlKey && e.keyCode == 187 ) {  // plus/equals
+              if (e.shiftKey) {
+                x = x + '+';
+              } else {
+                x = x + '=';
+              }
+            } else if ( ! e.ctrlKey && e.keyCode == 188 ) {  // comma/l-angle
+              if (e.shiftKey) {
+                x = x + '<';
+              } else {
+                x = x + ',';
+              }
+            } else if ( ! e.ctrlKey && e.keyCode == 189 ) {  // minus/underscore
+              if (e.shiftKey) {
+                x = x + '_';
+              } else {
+                x = x + '-';
+              }
+            } else if ( ! e.ctrlKey && e.keyCode == 190 ) {  // period/r-angle
+              if (e.shiftKey) {
+                x = x + '>';
+              } else {
+                x = x + '.';
+              }
+            } else if ( ! e.ctrlKey && e.keyCode == 191 ) {  // slash/question
+              if (e.shiftKey) {
+                x = x + '?';
+              } else {
+                x = x + '/';
+              }
+            // } else if ( ! e.ctrlKey && e.keyCode == 188 ) {
+            //   inp = inp + '<';
+            // } else if ( ! e.ctrlKey && e.keyCode == 190 ) {
+            //   inp = inp + '>'
+            } else if ( ! e.ctrlKey && e.keyCode == 8) {  // Backspace
+              e.preventDefault();
+              x = x.slice(0, -1);
+            } else if ( ! e.ctrlKey && e.keyCode == 37) {  // Left
+              e.preventDefault();
+              y = x.slice(-1) + y;
+              x = x.slice(0, -1);
+            } else if ( ! e.ctrlKey && e.keyCode == 39) {  // Right
+              e.preventDefault();
+              x = x + y.slice(0, 1);
+              y = y.slice(1);
+            } else if ( ! e.ctrlKey && e.keyCode == 38 ) {  // Up
+              e.preventDefault();
+              var col = x.length - x.lastIndexOf('\n');
+              y = x.slice(-col) + y;
+              x = x.slice(0, -col);
+              var lineWidth = x.length - x.lastIndexOf('\n');
+              if (lineWidth > col) {
+                var diff = lineWidth - col;
+                y = x.slice(-diff) + y;
+                x = x.slice(0, -diff);
+              }
+            } else if ( e.ctrlKey && e.keyCode == 38 ) {  // ctrl+Up
+              e.preventDefault();
+              var startOfThisLine = x.lastIndexOf('\n') + 1;
+              var pre_x = x.slice(0, startOfThisLine - 1);
+              var prevLine = pre_x.lastIndexOf('\n') + 1;
+              var toEndOfLine = y.indexOf('\n');
+              toEndOfLine = (toEndOfLine == -1) ? y.length : toEndOfLine;
+              x = pre_x.slice(0, prevLine) + x.slice(startOfThisLine);
+              y = y.slice(0, toEndOfLine) + "\n" + pre_x.slice(prevLine) + y.slice(toEndOfLine);
+            } else if ( ! e.ctrlKey && e.keyCode == 40 ) {  // Down
+              e.preventDefault();
+              var col = x.length - x.lastIndexOf('\n') - 1;
+              var toEndOfLine = y.indexOf('\n');
+              toEndOfLine = (toEndOfLine == -1) ? y.length : toEndOfLine;
+              x = x + y.slice(0, toEndOfLine + 1);
+              y = y.slice(toEndOfLine + 1);
+              var lineWidth = y.indexOf('\n');
+              lineWidth = (lineWidth == -1) ? y.length : lineWidth;
+              var shift = (lineWidth < col) ? lineWidth : col; // ie min
+              x = x + y.slice(0, shift);
+              y = y.slice(shift);
+            } else if ( e.ctrlKey && e.keyCode == 40 ) {  // ctrl+Down
+              e.preventDefault();
+              var startOfThisLine = x.lastIndexOf('\n') + 1;
+              var pre_x = x.slice(0, startOfThisLine);
+              var toEndOfLine = y.indexOf('\n');
+              toEndOfLine = (toEndOfLine == -1) ? y.length : toEndOfLine;
+              var post_y = y.slice(toEndOfLine + 1);
+              var nextLine = post_y.indexOf('\n');
+              nextLine = (nextLine == -1) ? post_y.length : nextLine;
+              x = pre_x + post_y.slice(0, nextLine) + "\n" + x.slice(startOfThisLine);
+              y = y.slice(0, toEndOfLine) + post_y.slice(nextLine);
+            } else if ( e.keyCode == 16 || e.keyCode == 17 ) { // shift and ctrl
+              // No-op
+            } else if ( e.ctrlKey && e.keyCode == 82 ) { // ctrl-r
+              // No-op
+            } else if ( e.ctrlKey && e.keyCode == 83 ) { // ctrl-s
+              e.preventDefault();
+            } else if ( e.ctrlKey && e.keyCode == 13 ) { // ctrl-enter
+              // No-op
+            } else {
+              alert(e.keyCode);
+            }
+            out.push(x);
+            x = y;
+          }
+          out.push(x);
+          element.innerHTML = out.join(cursorText);
+          localStorage.setItem("key", element.innerHTML);
+
+          if ( e.ctrlKey && e.shiftKey && e.keyCode == 83 ) { // ctrl-shift-s
+            saveToDisk("source.txt", "text/experiment", element.innerHTML);
+          }
+
+          if ( e.ctrlKey && e.keyCode == 13 ) { // ctrl-enter
+            var raw = out.join('');
+            compile(x => postprocess(e.shiftKey, raw, x), raw);
+          }
+      };
+
+      function postprocess(saveAfter, raw, result) {
+        if (result.error) {
+          alert(result.error);
+        } else if (result.bytecode) {
+          console.log(result.bytecode);
+          WebAssembly.compile(result.bytecode).then(mod => {
+            var mem = new WebAssembly.Memory({initial:10});
+            let view = new Uint8Array(mem.buffer);
+            var bytes = raw.toUTF8Bytes();
+            console.log(bytes);
+            for (var i = 0; i < bytes.length; i++) { view[i] = bytes[i]; }
+            const len = new WebAssembly.Global({value:'i32', mutable: false}, raw.length);
+            WebAssembly.instantiate(mod, {inp: {mem: mem, len: len}}).then(inst => {
+              debug = inst;
+              let view2 = new Uint8Array(inst.exports.out.buffer);
+              var compiled = view2.slice(0, inst.exports.len);
+              console.log(compiled);
+              var allgood = true;
+              for (var i=0; i < compiled.length; i++) { allgood = allgood && compiled[i] == result.bytecode[i]; }
+              console.log(allgood ? "All good!" : "Mismatch!");
+              if (allgood && saveAfter) {
+                localStorage.setItem("app", compiled);
+                saveToDisk("experiment.wasm", "application/wasm", compiled);
+              }
+            });
+          });
+        }
+      }
+    </script>
+  </head>
+  <body onload="document.getElementById('console').innerHTML = localStorage.getItem('key')">
+    <pre id="console"><span class="cursor"></span></pre>
+  </body>
+</html>
