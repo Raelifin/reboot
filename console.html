@@ -1,6 +1,8 @@
 <html>
   <head>
     <title>Experiment</title>
+    <meta content="text/html;charset=utf-8" http-equiv="Content-Type">
+    <meta content="utf-8" http-equiv="encoding">
     <style>
       body {
         background: #000;
@@ -84,6 +86,24 @@
       const cursorText = '<span class="cursor"></span>';  // WARNING: Also shows up in the body.
 
       var debug = {};
+
+      document.onpaste = function(e) {
+        e.preventDefault();
+        var paste = (event.clipboardData || window.clipboardData).getData('text');
+        var element = document.getElementById("console");
+        var inp = element.innerHTML.replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&').split(cursorText);
+        var out = [];
+        var x = inp[0];
+        for (var i = 1; i < inp.length; i++) {
+          var y = inp[i];
+          x = x + paste;
+          out.push(x);
+          x = y;
+        }
+        out.push(x);
+        element.innerHTML = out.join(cursorText);
+        localStorage.setItem("key", element.innerHTML);
+      };
 
       document.onkeydown = function(e) {
           e = e || window.event;
@@ -236,6 +256,8 @@
               // No-op
             } else if ( e.ctrlKey && e.keyCode == 83 ) { // ctrl-s
               e.preventDefault();
+            } else if ( e.ctrlKey && e.keyCode == 86 ) { // ctrl-v
+              // No-op
             } else if ( e.ctrlKey && e.keyCode == 13 ) { // ctrl-enter
               // No-op
             } else {
@@ -288,7 +310,7 @@
       }
     </script>
   </head>
-  <body onload="document.getElementById('console').innerHTML = localStorage.getItem('key')">
-    <pre id="console"><span class="cursor"></span></pre>
+  <body onload="document.getElementById('console').innerHTML = localStorage.getItem('key') || cursorText">
+    <pre id="console"></pre>
   </body>
 </html>
