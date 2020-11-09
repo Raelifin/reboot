@@ -3,15 +3,48 @@
 01 00 00 00; WASM BINARY VERSION
 
 ; ===================================
+0; Custom Section: Macro Trie
+18; Section size in Bytes
+0; no name
+
+41; 'A'
+0 0 0 0; LT -&gt; Leaf
+0 0 0 0; GT -&gt; Leaf
+1 A; StopHere -&gt; A
+  41; 'A'
+  0 0 0 0; LT -&gt; Leaf
+  0 0 0 0; GT -&gt; Leaf
+  1 AA; StopHere -&gt; AA
+  0; No Subtrie
+
+; 0 -&gt; (0, 0 -&gt; (0, [])
+;          1 -&gt; (1, [])
+;          ...
+;          f -&gt; (15, [])
+;      )
+; 1 -&gt; (1, 0 -&gt; (16, [])
+;          1 -&gt; (17, [])
+;          ...
+;          f -&gt; (31, [])
+;      )
+; ...
+; f -&gt; (15, 0 -&gt; (240, [])
+;           1 -&gt; (241, [])
+;           ...
+;           f -&gt; (255, [])
+;      )
+
+; ===================================
 1; Function Type Signatures
-17; Section size in Bytes
-5; Count
+1D; Section size in Bytes
+6; Count
 
 60 0 0           ;  () -&gt; ()
 60 0 1 7F        ;  () -&gt; i32
 60 1 7F 0        ; i32 -&gt; ()
 60 1 7F 1 7F     ; i32 -&gt; i32
 60 2 7F 7F 1 7F  ; (i32, i32) -&gt; i32
+60 3 7F 7F 7F 0  ; (i32, i32, i32) -&gt; i32
 
 ; ==================================
 2; Imports
@@ -20,30 +53,32 @@
 
 3 69 6E 70; "inp"
 3 6D 65 6D; "mem"
-2 0 A; memory of at least 10 pages
+2 0 7F; memory of at least 127 pages
 
 3 69 6E 70; "inp"
 3 6C 65 6E; "len"
-3 7F 0; const $remainingChars : i32
+3 7F 0; const inp.len : i32  (num bytes)
 
 ; ==================================
 3; Function Headers
-6; Section size in Bytes
-5; Count
+9; Section size in Bytes
+8; Count
 
 0; main : () -&gt; ()
 1; popChar : () -&gt; i32
-1; popNonWhitespace : () -&gt; i32
-3; swallowByte : i32 -&gt; i32
+0; consumeWhitespace : () -&gt; ()
+1; popByte : () -&gt; i32
 3; parseNybble : i32 -&gt; i32
+2; unpopChar : i32 -&gt; ()
+5; memcopy : (i32, i32, i32) -&gt; ()
+1; popMacro : () -&gt; i32
 
 ; ==================================
 6; Globals
-10; Section size in Bytes
-3; Count
+B; Section size in Bytes
+2; Count
 
 7F 01 41 0 B; var $readIdx = i32.const 0
-7F 01 41 0 B; var $consumedChars = i32.const 0
 7F 01 41 0 B; var $writtenBytes = i32.const 0
 
 ; ==================================
@@ -58,7 +93,7 @@ B 70 61 72 73 65 4E 79 62 62 6C 65; "parseNybble"
 0 4; fn #4
 
 3 6C 65 6E; "len"
-3 3; global $writtenBytes
+3 2; global $writtenBytes
 
 ; ==================================
 8; Start
@@ -66,50 +101,53 @@ B 70 61 72 73 65 4E 79 62 62 6C 65; "parseNybble"
 0; main
 
 ; ==================================
-<span class="cursor"></span>A; Function Bodies
-DF 2; Section size in Bytes
-5; Count
+A; Function Bodies
+F3 3; Section size in Bytes
+8; Count
 
 ; main : () -&gt; ()    (side-effects on memory)
 3F; Function size in Bytes
 
 1; one type of local var
-  1 7F;   $b : i32
+  1 7F;   $b : Byte
 
 1 1 1 1 1
 1 1 1 1 1
-1 1 1 1 1
-1 1 1 1 1
-1 1 1
+1 1
 
 03 40; loop
 
-10 2; popNonWhitespace
-10 3; swallowByte
+10 2; consumeWhitespace
+10 3; popByte
 22 0; tee $b
 
 41 0; i32.const 0
 4E 4 40; if i32.ge_s
 
 ; write byte
-23 3; push_global $writtenBytes
+23 0; push_global inp.len
+23 2; push_global $writtenBytes
+6A; i32.add
 20 0; push_local $b
 3A 0 0; i32.store8 0 0
 
 ; increment $writtenBytes
-23 3; push_global $writtenBytes
+23 2; push_global $writtenBytes
 41 1; i32.const 1
 6A; i32.add
-24 3; set_global $writtenBytes
+24 2; set_global $writtenBytes
 
 B; endif
 
-; until $consumedChars + 1 &gt; inp.len
+; if (inp.len &gt; $readIdx) { continue }
 23 0; push_global inp.len
-23 2; push_global $consumedChars
-4F; i32.lt_u
+23 1; push_global $readIdx
+4B; i32.gt_u
 D 0; br_if
 B; endloop
+
+23 0 23 2 41 0 10 6; memcopy(inp.len, $writtenBytes, 0)
+
 B; end (main)
 
 ; --------------------------
@@ -129,6 +167,8 @@ B; end (main)
 1 1 1 1
 1 1 1 1
 1 1 1 1
+1 1 1 1
+1 1 1
 B; endif
 
 ; increment $readIdx
@@ -137,18 +177,12 @@ B; endif
 6A; i32.add
 24 1; set_global $readIdx
 
-; increment $consumedChars
-23 2; push_global $consumedChars
-41 1; i32.const 1
-6A; i32.add
-24 2; set_global $consumedChars
-
 20 0; push_local $result
 B; end (popChar)
 
 ; ------------------------
-; popNonWhitespace : () -&gt; i32    (side-effects on memory)
-3D; Function size in Bytes
+; consumeWhitespace : () -&gt; ()    (side-effects on memory)
+41; Function size in Bytes
 
 1; one type of local var...
 2 7F; $commentMode : Bit   &amp;   $c : Char
@@ -165,7 +199,8 @@ B; endif (not a newline)
 41 0; char.const char.null
 20 1; push $c
 46 4 40; if i32.eq
-20 1 F; return $c
+20 1 10 5; unpop($c)
+F; return $c
 B; endif (not a nullchar)
 
 20 0 D 0; continue_if $commentMode
@@ -183,18 +218,22 @@ B; endif (not a semicolon)
 
 B; endloop
 20 1; push_local $c
+10 5; unpop($c)
 B; end (consumeWhitespace)
 
 ; -----------------------
-; swallowByte : i32 -&gt; i32   (side-effects on memory)
+; popByte : () -&gt; i32   (side-effects on memory)
 3F; Function size in Bytes
 
 1; one type of local var...
-2 7F; $n : Nibble
+3 7F; $x : overloaded(Char &amp;&amp; Nybble)    an    $n : Nybble    and    $c : Char
 
-1 1 1 1 1 1 1
+1 1 1 1 1
+1 1 1 1 1
+1 1 1
 
-20 0 10 4; parseNybble($x)
+10 1 22 0; $x &lt;- popChar()
+10 4; parseNybble($x)
 22 0; tee $x
 
 41 0; i32.const 0
@@ -202,7 +241,8 @@ B; end (consumeWhitespace)
 20 0 F; return $x
 B; endif
 
-10 1 10 4; parseNybble(popChar())
+10 1 22 2; $c &lt;- popChar()
+10 4; parseNybble($c)
 22 1; tee $n
 
 41 0; i32 const0
@@ -210,13 +250,7 @@ B; endif
 ; if the second nybble fails to parse, we return just the first one
 ; this is so pairs like "0 " and "A;" work.
 ; but first we must "unpop" the char that we tried to nibble
-;   WARNING! THERE'S A BUG HERE!
-;   IF THE POPPED CHAR IS MULTIBYTE, WE'LL FAIL TO UNPOP CLEANLY!!
-; TODO FIXME
-; 1 1 1 1 1 1 1
-23 1 41 1 6B 24 1; decrement $readIdx
-; 1 1 1 1 1 1 1
-23 2 41 1 6B 24 2; decrement $consumedChars
+20 2 10 5; unpopChar($c);
 20 0 F; return $x
 B; endif
 
@@ -260,3 +294,83 @@ B
 
 41 0 41 1 6B
 B; end (parseNybble)
+
+; --------------------
+; unpopChar : i32 -&gt; ()    (side effects on memory)
+1F; function size in bytes
+
+0; no local vars
+
+20 0; push_local $x
+41 80 1; i32.const 128
+4F 4 40; if i32.ge_u
+0; crash           TODO
+1 1 1 1
+1 1 1 1
+1 1 1 1
+B; endif
+
+; decrement $readIdx
+23 1; push_global $readIdx
+41 1; i32.const 1
+6B; i32.sub
+24 1; set_global $readIdx
+
+B; end (unpopChar)
+
+; ------------------
+; memcopy : (i32, i32, i32) -&gt; ()    (side effects on memory)
+2F; function size in bytes
+
+; $x = $src
+; $y = $len
+; $z = $tgt
+0; no local vars
+
+1 1
+
+03 40; loop
+20 1 41 0 46 D 1; if ($len &gt; 0) { return; }
+
+20 2; push_local $tgt
+20 0 2D 0 0; load8_u at $src
+3A 0 0; store8
+
+20 0 41 1 6A 21 0; increment $src
+20 1 41 1 6B 21 1; decrement $len
+20 2 41 1 6A 21 2; increment $tgt
+
+C 0; continue
+B; endloop
+B; end (memcopy)
+
+; ------------------
+; popMacro : () -&gt; i32    (side effects on memory)
+; returns the index into memory for the vec(Byte) to insert in place of the macro; returns -1 if the cursor is not on a macro
+3F; function size in bytes
+
+1; one type of local var....
+1 7F; $trie : Pointer MacroTrie
+
+23 0 41 A 6A 21 0; $trie &lt;- inp.len + 11
+
+1 1 1 1
+1 1 1 1
+1 1 1 1
+
+1 1 1 1
+1 1 1 1
+1 1 1 1
+1 1 1 1
+
+1 1 1 1
+1 1 1 1
+1 1 1 1
+1 1 1 1
+
+1 1 1 1
+1 1<span class="cursor"></span>
+
+41 0
+
+B; end (popMacro)

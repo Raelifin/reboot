@@ -47,7 +47,7 @@
           callback({bytecode: view});
         } else {
           core.then(mod => {
-            var mem = new WebAssembly.Memory({initial:10});
+            var mem = new WebAssembly.Memory({initial:127});
             let view = new Uint8Array(mem.buffer);
             var bytes = raw.toUTF8Bytes();
             for (var i = 0; i < bytes.length; i++) { view[i] = bytes[i]; }
@@ -146,7 +146,7 @@
             } else if ( ! e.ctrlKey && e.keyCode == 9 ) {
               x = x + '  ';
               e.preventDefault();
-            } else if ( ! e.ctrlKey && e.keyCode == 186 ) {  // colon/semicolon
+            } else if ( ! e.ctrlKey && (e.keyCode == 186 || e.keyCode == 59) ) {  // colon/semicolon
               if (e.shiftKey) {
                 x = x + ':';
               } else {
@@ -176,7 +176,7 @@
               } else {
                 x = x + '\'';
               }
-            } else if ( ! e.ctrlKey && e.keyCode == 187 ) {  // plus/equals
+            } else if ( ! e.ctrlKey && (e.keyCode == 187 || e.keyCode == 61) ) {  // plus/equals
               if (e.shiftKey) {
                 x = x + '+';
               } else {
@@ -188,7 +188,7 @@
               } else {
                 x = x + ',';
               }
-            } else if ( ! e.ctrlKey && e.keyCode == 189 ) {  // minus/underscore
+            } else if ( ! e.ctrlKey && (e.keyCode == 189 || e.keyCode == 173) ) {  // minus/underscore
               if (e.shiftKey) {
                 x = x + '_';
               } else {
@@ -315,18 +315,18 @@
         } else if (result.bytecode) {
           console.log(result.bytecode);
           WebAssembly.compile(result.bytecode).then(mod => {
-            var mem = new WebAssembly.Memory({initial:10});
+            var mem = new WebAssembly.Memory({initial:127});
             let view = new Uint8Array(mem.buffer);
             var bytes = raw.toUTF8Bytes();
             console.log(bytes);
             for (var i = 0; i < bytes.length; i++) { view[i] = bytes[i]; }
-            const len = new WebAssembly.Global({value:'i32', mutable: false}, raw.length);
+            const len = new WebAssembly.Global({value:'i32', mutable: false}, bytes.length);
             WebAssembly.instantiate(mod, {inp: {mem: mem, len: len}}).then(inst => {
               debug = inst;
               let view2 = new Uint8Array(inst.exports.out.buffer);
               var compiled = view2.slice(0, inst.exports.len);
               console.log(compiled);
-              var allgood = true;
+              var allgood = compiled.length == result.bytecode.length;
               for (var i=0; i < compiled.length; i++) { allgood = allgood && compiled[i] == result.bytecode[i]; }
               console.log(allgood ? "All good!" : "Mismatch!");
               if (allgood && saveAfter) {
